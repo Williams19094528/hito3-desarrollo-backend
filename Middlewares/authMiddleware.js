@@ -24,8 +24,7 @@ const crearToken = async (req, res, next) => {
     const user = await verificarCredenciales(req.body);
     if (!user) {
       res.status(401).json({ message: "Credenciales incorrectas" });
-    }
-    else {
+    } else {
       const token = Token(user);
       res.status(201).json({ token });
     }
@@ -44,7 +43,7 @@ const Token = (usuario) => {
     nombre: usuario.nombre,
     apellido: usuario.apellido,
   };
-  return jwt.sign(payload, SECRET_KEY, { expiresIn: "7d", algorithm: 'HS256' });
+  return jwt.sign(payload, SECRET_KEY, { expiresIn: "7d", algorithm: "HS256" });
 };
 
 module.exports = { verifyToken, crearToken };

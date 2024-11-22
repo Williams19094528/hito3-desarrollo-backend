@@ -1,36 +1,49 @@
-const express = require('express');
+const express = require("express");
 const app = express();
 
-const cors = require('cors');
+const cors = require("cors");
 const corsOptions = {
-  origin: 'http://localhost:3000',
+  origin: "http://localhost:3000",
   credentials: true,
 };
 
-const Admin = 'Cliente';
+const Admin = "Cliente";
 
 app.use(cors(corsOptions));
-
 app.use(express.json());
 
+const { Pool } = require("pg");
+const { DB_CONFIG } = require("./Config/secretKey");
+const pool = new Pool(DB_CONFIG);
 
-const { verifyToken, crearToken } = require('./Middlewares/authMiddleware');
-const { checkCredenciales } = require('./Middlewares/checkCredenciales');
-const { saveUser, 
-    getProductos, 
-    getProducto, 
-    addProducto,
-modificarProducto,
-createOrder,
-getOrderDetailsById,
-modificarStatusOrden,
-getMyOrders } = require('./Models/consultas');
+// Verificar conexión a la base de datos
+pool.query("SELECT NOW()", (err, res) => {
+  if (err) {
+    console.error("Error al conectar con la base de datos:", err);
+  } else {
+    console.log("Conexión exitosa a la base de datos:", res.rows[0]);
+  }
+});
 
-//Rutas Login
+// Importar middlewares y modelos
+const { verifyToken, crearToken } = require("./Middlewares/authMiddleware");
+const { checkCredenciales } = require("./Middlewares/checkCredenciales");
+const {
+  saveUser,
+  getProductos,
+  getProducto,
+  addProducto,
+  modificarProducto,
+  createOrder,
+  getOrderDetailsById,
+  modificarStatusOrden,
+  getMyOrders,
+} = require("./Models/consultas");
 
-app.post('/api/login', checkCredenciales, crearToken);
+// Rutas Login
+app.post("/api/login", checkCredenciales, crearToken);
 
-app.post('/api/crearUsuario', async (req, res) => {
+app.post("/api/crearUsuario", async (req, res) => {
   const usuario = req.body;
   try {
     const user = await saveUser(usuario);
@@ -42,125 +55,48 @@ app.post('/api/crearUsuario', async (req, res) => {
   }
 });
 
-app.get('/api', async (req, res) =>{
-    res.status(200).json({ message: "Bienvenido a la API Proyecto Final" });
-})
+app.get("/api", async (req, res) => {
+  res.status(200).json({ message: "Bienvenido a la API Proyecto Final" });
+});
 
-app.get('/api/productos', async (req, res) =>{
+// Nueva Ruta: Obtener todos los productos
+app.get("/api/productos", async (req, res) => {
+  try {
     const productos = await getProductos();
     res.status(200).json(productos);
-})
-
-app.get('/api/producto/:partnumber', async (req, res) =>{
-    const producto = await getProducto(req.params.partnumber);
-    res.status(200).json(producto);
-})
-
-app.post('/api/admin/crearProducto', verifyToken, async (req, res) =>{
-    const { userId, tipo } = req;
-    if (tipo !== Admin) {
-        res.status(401).json({ message: "No tienes permisos para crear productos" });
-    }
-    else{
-
-    const producto = req.body;
-    try {
-        const productoCreado = await addProducto(producto);
-        res.status(201).json(productoCreado);
-    } catch (err) {
-        console.log(err);
-        res.status(err.code).json(err.message);
-    }
-    }
+  } catch (err) {
+    console.error("Error al obtener productos:", err);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
 });
 
-app.put('/api/admin/modificarProducto/:id', verifyToken, async (req, res) =>{
-    const { userId, tipo } = req;
-    if (tipo !== Admin) {
-        res.status(401).json({ message: "No tienes permisos para modificar productos" });
+// Ruta para obtener un producto específico por su partnumber
+app.get("/api/productos/:partnumber", async (req, res) => {
+  const { partnumber } = req.params;
+  try {
+    const producto = await getProducto(partnumber);
+    if (producto) {
+      res.status(200).json(producto);
+    } else {
+      res.status(404).json({ message: "Producto no encontrado" });
     }
-    else{
-    const { id } = req.params;
-    const producto = req.body;
-    producto.id = id;
-    console.log(producto);
-    try {
-        const productoModificado = await modificarProducto(producto);
-        if (productoModificado) {
-            res.status(200).json({ producto: productoModificado, message: "Producto modificado" });
-        }
-        else {
-            res.status(404).json({ message: "Producto no encontrado" });
-        }
-    } catch (err) {
-        console.log(err);
-        res.status(err.code).json(err.message);
-    }
-    }
-})
-
-app.put('/api/admin/modificarStatusOrden/:pedido_id', verifyToken, async (req, res) =>{
-    const { userId, tipo } = req;
-    if (tipo !== Admin) {
-        res.status(401).json({ message: "No tienes permisos para modificar productos" });
-    }
-    else{
-    const { pedido_id } = req.params;
-    const {status} = req.body;
-    console.log(status);
-    try {
-        const pedidoModificado = await modificarStatusOrden(pedido_id, status);
-        if (pedidoModificado) {
-            res.status(200).json({ pedido: pedidoModificado, message: "Pedido modificado", nuevoStatus: status });
-        }
-        else {
-            res.status(404).json({ message: "Pedido no encontrado" });
-        }
-    } catch (err) {
-        console.log(err);
-        res.status(err.code).json(err.message);
-    }
-    }
+  } catch (err) {
+    console.error("Error al obtener producto:", err);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
 });
 
-app.get('/api/pedidos', verifyToken, async (req, res) =>{
-    const { userId, tipo } = req;
-    const pedidos = await getMyOrders(userId);
-    res.status(200).json(pedidos);
-});
-
-app.post('/api/pedidos', verifyToken, async (req, res) =>{
-    const { userId, tipo } = req;
-    const pedido = req.body;
-    pedido.usuario_id = userId;
-    try {
-        const pedidoCreado = await createOrder(pedido);
-        res.status(201).json({pedido: pedidoCreado, message: "Pedido creado con exito"});
-    } catch (err) {
-        console.log(err);
-        res.status(err.code).json(err.message);
-    }
-});
-
-app.get('/api/pedidos/:pedido_id', verifyToken, async (req, res) =>{
-    const { pedido_id } = req.params;
-    const pedido = await getOrderDetailsById(pedido_id);
-    res.status(200).json(pedido);
-});
-
+// Rutas para manejo de errores
 app.get("*", (req, res) => {
-    res.status(404).json({ message: "No existe la ruta" });
-  });
-  app.post("*", (req, res) => {
-    res.status(404).json({ message: "No existe la ruta" });
-  });
-
-app.listen(3000, () => {
-  console.log('Server is running on port 3000');
+  res.status(404).json({ message: "No existe la ruta" });
+});
+app.post("*", (req, res) => {
+  res.status(404).json({ message: "No existe la ruta" });
 });
 
+// Servidor
+app.listen(3001, () => {
+  console.log("Sevidor activo en el puerto 3001");
+});
 
 module.exports = app;
-
-
-

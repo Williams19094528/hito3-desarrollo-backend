@@ -1,268 +1,117 @@
-const {DB_CONFIG, SALT_ROUNDS} = require('../Config/secretKey');
-
+const { DB_CONFIG, SALT_ROUNDS } = require("../Config/secretKey");
 const { Pool } = require("pg");
-const format = require('pg-format');
+const format = require("pg-format");
 const bcrypt = require("bcryptjs");
 
 const pool = new Pool(DB_CONFIG);
 
+// Verifica las credenciales del usuario
 const verificarCredenciales = async (usuario) => {
-    const { email, password } = usuario;
-    const query = format(
-      "SELECT usuarios.email, perfil.tipo, usuarios.password, clientes.nombre, clientes.apellido, clientes.usuario_id from usuarios join perfil on usuarios.id = perfil.usuario_id join clientes on clientes.usuario_id = perfil.usuario_id where usuarios.email = %L",
-      email
-    );
-    try {
-      const result = await pool.query(query);
-  
-      if (
-        !result.rows[0] ||
-        !bcrypt.compareSync(password, result.rows[0].password)
-      ) {
-        throw { code: 401, message: "Credenciales incorrectas" };
-      } else {
-        return result.rows[0];
-      }
-    } catch (err) {
-      console.log(err);
-      if (err.code === "3D000") {
-        throw { code: 500, message: "Error interno del servidor" };
-      }
-      //throw { code: 400, message: "Error al verificar credenciales" };
-    }
-  };
-  
-  const saveUser = async (user) => {
-    let { email, password, nombre, apellido, direccion, telefono } = user;
-    console.log(user);
-    email = email.toLowerCase();
-    const checkEmail = await pool.query('SELECT * FROM usuarios WHERE email = $1', [email]);
-    if (checkEmail.rows.length > 0) {
-      throw { code: 409, message: "El usuario ya existe" };
-    }
-    const passwordEncriptada = bcrypt.hashSync(password);
-    const values = [email, passwordEncriptada];
-    try{
-        await pool.query('INSERT INTO usuarios (email, password) values ($1, $2)', values);
-        const userId = (await pool.query('SELECT last_value from usuarios_id_seq')).rows[0].last_value;
-        const respuesta = await pool.query('INSERT INTO clientes (usuario_id, nombre, apellido, direccion, telefono) values ($1, $2, $3, $4, $5) returning *', [userId, nombre, apellido, direccion, telefono]);
-        return respuesta.rows[0];
-    } catch (err) {
-        console.log(err);
-      if (err.code === "3D000") {
-        throw { code: 500, message: "Error interno del servidor" };
-      }
-      throw { code: 400, message: "Error al guardar usuario" };
-    }
-  };
-  
-  const getUser = async (email) => {
-    const query = format(
-      "SELECT * from usuarios where email = %L limit 1",
-      email
-    );
-    try {
-      const result = await pool.query(query);
-      return result.rows;
-    } catch (err) {
-      console.log(err);
-      if (err.code === "3D000") {
-        throw { code: 500, message: "Error interno del servidor" };
-      }
-      throw { code: 400, message: "Error al obtener usuario" };
-    }
-  };
+  const { email, password } = usuario;
 
-  const getAllUsers = async () => {
-    const query = "SELECT * from usuarios";
-    try {
-      const result = await pool.query(query);
-      return result.rows;
-    } catch (err) {
-      console.log(err);
-      if (err.code === "3D000") {
-        throw { code: 500, message: "Error interno del servidor" };
-      }
-      throw { code: 400, message: "Error al obtener usuarios" };
-    }
-  };
+  console.log("Datos recibidos en verificarCredenciales:", { email, password });
 
-  const deleteUser = async (email) => {
-    const query = format("DELETE FROM usuarios where email = %L", email);
-    try {
-      const result = await pool.query(query);
-      return result.rows;
-    } catch (err) {
-      console.log(err);
-      if (err.code === "3D000") {
-        throw { code: 500, message: "Error interno del servidor" };
-      }
-      throw { code: 400, message: "Error al eliminar usuario" };
-    }
-  };
+  const query = format(
+    "SELECT usuarios.email, perfil.tipo, usuarios.password, clientes.nombre, clientes.apellido, clientes.usuario_id FROM usuarios JOIN perfil ON usuarios.id = perfil.usuario_id JOIN clientes ON clientes.usuario_id = perfil.usuario_id WHERE usuarios.email = %L",
+    email
+  );
 
-  const modificarStatusOrden = async (pedido_id, status) => {
-    const query = format("UPDATE pedidos SET status = %L WHERE id = %L", status, pedido_id);
-    try {
-      const result = await pool.query(query);
-      if(result.rowCount === 0){
-        return null;
-      }
-      else{
-        return pedido_id;
-      }
-    } catch (err) {
-      console.log(err);
-      if (err.code === "3D000") {
-        throw { code: 500, message: "Error interno del servidor" };
-      }
-      throw { code: 400, message: "Error al modificar status del pedido" };
-    }
-  };
+  console.log("Consulta generada:", query);
 
-  const createOrder = async (order) => {
-    const { usuario_id, total, tipo_de_pago, delivery, productos } = order;
-    const query = format(
-      "INSERT INTO pedidos (usuario_id, total, tipo_pago, delivery) VALUES (%L, %s, %L, %L) RETURNING *",
-      usuario_id,
-      total,
-      tipo_de_pago,
-      delivery
-    );
-    try {
-      const result = await pool.query(query);
-      productos.forEach(async (producto) => {
-        const {producto_id, cantidad} = producto;
-        const query = format("INSERT INTO detalle_pedido (pedido_id, producto_id, cantidad) VALUES (%L, %L, %L)", result.rows[0].id, producto_id, cantidad);
-        await pool.query(query);
-      });
-      return order;
-      
-    } catch (err) {
-      console.log(err);
-      if (err.code === "3D000") {
-        throw { code: 500, message: "Error interno del servidor" };
-      }
-      throw { code: 400, message: "Error al crear pedido" };
-    }
-  };
-  
-  
-  const getMyOrders = async (usuario_id) => {
-    const query = format("SELECT * from pedidos where usuario_id = %L", usuario_id);
-    try {
-      const result = await pool.query(query);
-      return result.rows;
-    }
-    catch (err) {
-      console.log(err);
-      if (err.code === "3D000") {
-        throw { code: 500, message: "Error interno del servidor" };
-      }
-      throw { code: 400, message: "Error al obtener pedidos" };
-    }
-  };
+  try {
+    const result = await pool.query(query);
+    console.log("Resultado de la consulta:", result.rows);
 
-  const getOrderDetailsById = async (pedido_id) => {
-    const query = format("select productos.nombre, detalle_pedido.cantidad from productos join detalle_pedido on productos.id = detalle_pedido.producto_id where detalle_pedido.pedido_id=%L", pedido_id);
-    try {
-      const result = await pool.query(query);
-      return result.rows;
+    if (
+      !result.rows[0] ||
+      !bcrypt.compareSync(password, result.rows[0].password)
+    ) {
+      console.log("Credenciales incorrectas");
+      throw { code: 401, message: "Credenciales incorrectas" };
     }
-    catch (err) {
-        console.log(err);
-        return null;
-    }
+
+    console.log("Credenciales verificadas:", result.rows[0]);
+    return result.rows[0];
+  } catch (err) {
+    console.error("Error en verificarCredenciales:", err);
+    throw err;
+  }
 };
 
+// Obtener todos los productos
+const getProductos = async () => {
+  const query = "SELECT * FROM productos";
+  try {
+    const result = await pool.query(query);
+    return result.rows;
+  } catch (err) {
+    console.error("Error en getProductos:", err);
+    throw err;
+  }
+};
 
-  const addProducto = async (producto) => {
-    const { partnumber, nombre, precio, picture_url, detalle } = producto;
-    const query = format("INSERT INTO productos (partnumber, nombre, precio, picture_url, detalle) values (%L, %L, %s, %L, %L) returning *", partnumber, nombre, precio, picture_url, detalle);
-    try {
-        const result = await pool.query(query);
-        return result.rows[0];
-    } catch (err) {
-      
-      if (err.code === "3D000") {
-        throw { code: 500, message: "Error interno del servidor" };
-      }
-      if (err.code === "23505") {
-        throw { code: 409, message: "El producto ya existe" };
-      }
-      throw { code: 400, message: "Error al crear producto" };
-    }
-  };
+// Obtener un producto por su partnumber
+const getProducto = async (partnumber) => {
+  const query = format(
+    "SELECT * FROM productos WHERE partnumber = %L",
+    partnumber
+  );
+  try {
+    const result = await pool.query(query);
+    return result.rows[0];
+  } catch (err) {
+    console.error("Error en getProducto:", err);
+    throw err;
+  }
+};
 
-  const getProductos = async () => {
-    const query = "SELECT * from productos";
-    try {
-      const result = await pool.query(query);
-      return result.rows;
-    } catch (err) {
-      console.log(err);
-      if (err.code === "3D000") {
-        throw { code: 500, message: "Error interno del servidor" };
-      }
-      throw { code: 400, message: "Error al obtener productos" };
-    }
-  };
+// Guarda un nuevo usuario
+const saveUser = async (user) => {
+  let { email, password, nombre, apellido, direccion, telefono } = user;
 
-  const getProducto = async (partnumber) => {
-    const query = format("SELECT * from productos where partnumber = %L", partnumber);
-    try {
-      const result = await pool.query(query);
-      return result.rows;
-    } catch (err) {
-      console.log(err);
-      if (err.code === "3D000") {
-        throw { code: 500, message: "Error interno del servidor" };
-      }
-      throw { code: 400, message: "Error al obtener producto" };
-    }
-  };
+  console.log("Datos recibidos en saveUser:", { email, nombre, apellido });
 
-  const modificarProducto = async (producto) => {
-    const { id, partnumber,nombre, precio, picture_url, detalle } = producto;
-    const query = format(
-      "UPDATE productos SET partnumber = %L, nombre = %L, precio = %s, picture_url = %L, detalle = %L WHERE id = %L RETURNING *",
-      partnumber,
-      nombre,
-      precio,
-      picture_url,
-      detalle,
-      id
+  email = email.toLowerCase();
+  const checkEmail = await pool.query(
+    "SELECT * FROM usuarios WHERE email = $1",
+    [email]
+  );
+
+  if (checkEmail.rows.length > 0) {
+    console.log("El usuario ya existe:", email);
+    throw { code: 409, message: "El usuario ya existe" };
+  }
+
+  const passwordEncriptada = bcrypt.hashSync(password);
+  const values = [email, passwordEncriptada];
+
+  console.log("Valores a insertar en usuarios:", values);
+
+  try {
+    const insertUserQuery = `
+      INSERT INTO usuarios (email, password) 
+      VALUES ($1, $2) RETURNING id
+    `;
+    const userId = (await pool.query(insertUserQuery, values)).rows[0].id;
+
+    console.log("ID del nuevo usuario:", userId);
+
+    const respuesta = await pool.query(
+      "INSERT INTO clientes (usuario_id, nombre, apellido, direccion, telefono) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+      [userId, nombre, apellido, direccion, telefono]
     );
-    try {
-      const result = await pool.query(query);
-      if (result.rows.length === 0) {
-        return null;
-      }
-      else {
-        return result.rows[0];
-      }
-    } catch (err) {
-      console.log(err);
-      if (err.code === "3D000") {
-        throw { code: 500, message: "Error interno del servidor" };
-      }
-      throw { code: 400, message: "Error al modificar producto" };
-    }
-  };
 
-  
-  
-  module.exports = { 
-    verificarCredenciales, 
-    saveUser, 
-    getUser,
-    addProducto,
-    getProductos,
-    getProducto,
-    modificarProducto,
-    getMyOrders,
-    createOrder,
-    getOrderDetailsById,
-    modificarStatusOrden
-  };
+    console.log("Nuevo cliente insertado:", respuesta.rows[0]);
+    return respuesta.rows[0];
+  } catch (err) {
+    console.error("Error en saveUser:", err);
+    throw err;
+  }
+};
 
+module.exports = {
+  verificarCredenciales,
+  saveUser,
+  getProductos,
+  getProducto,
+};
